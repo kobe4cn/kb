@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KB RAG Demo</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 20px; }
+      #answer { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 8px; min-height: 120px; }
+      .ctx { background: #f7f7ff; border-left: 3px solid #88f; margin: 8px 0; padding: 8px; }
+      .cit { font-size: 12px; color: #555; }
+      input, button { padding: 8px; }
+    </style>
+  </head>
+  <body>
+    <h3>KB RAG Demo</h3>
+    <div>
+      <input id="q" size="60" placeholder="输入你的问题..." />
+      <button onclick="ask()">Query</button>
+      <button onclick="askStream()">SSE Stream</button>
+    </div>
+    <h4>Answer</h4>
+    <div id="answer"></div>
+    <h4>Contexts</h4>
+    <div id="contexts"></div>
+    <h4>Citations</h4>
+    <div id="citations"></div>
+    <script>
+      async function ask() {
+        const query = document.getElementById('q').value || '你好，平台是什么？';
+        const resp = await fetch('/api/v1/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, top_k: 3, mode: 'rag' }) });
+        const data = await resp.json();
+        render(data);
+      }
+
+      async function askStream() {
+        const query = document.getElementById('q').value || '介绍一下平台？';
+        const evt = new EventSource('/api/v1/query/stream', { withCredentials: false });
+        document.getElementById('answer').textContent = '';
+        evt.onopen = () => {
+          // trigger POST via fetch; fallback: send initial chunk by query param is easier, use fetch to start server-side task
+          fetch('/api/v1/query/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, top_k: 3 }) });
+        };
+        evt.onmessage = e => {
+          document.getElementById('answer').textContent += e.data;
+        };
+        evt.addEventListener('final', e => {
+          console.log('final', e.data);
+          evt.close();
+        });
+        evt.addEventListener('error', e => {
+          console.error('error', e);
+          evt.close();
+        });
+      }
+
+      function render(data) {
+        document.getElementById('answer').textContent = data.answer || '';
+        const ctx = document.getElementById('contexts');
+        ctx.innerHTML = '';
+        (data.contexts || []).forEach((t, i) => {
+          const div = document.createElement('div');
+          div.className = 'ctx';
+          div.textContent = `[${i+1}] ` + t;
+          ctx.appendChild(div);
+        });
+        const cit = document.getElementById('citations');
+        cit.innerHTML = '';
+        (data.citations || []).forEach(c => {
+          const d = document.createElement('div');
+          d.className = 'cit';
+          d.textContent = `${c.document_id}#${c.chunk_id} p=${c.page ?? '-'} score=${c.score.toFixed(3)}: ${c.snippet}`;
+          cit.appendChild(d);
+        });
+      }
+    </script>
+  </body>
+  </html>
+

@@ -1,0 +1,78 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+
+# 多提供商配置示例：
+chat_provider:
+  kind: openai_compat
+  base_url: https://api.openai.com
+  api_key_env: OPENAI_API_KEY
+  model: gpt-4o
+
+embedding_provider:
+  # 可选：openai_compat / qwen / deepseek
+  kind: openai_compat
+  base_url: https://api.openai.com
+  api_key_env: OPENAI_API_KEY
+  model: text-embedding-3-small
+
+# 示例：Qwen 原生 Embedding（DashScope）
+# embedding_provider:
+#   kind: qwen
+#   api_url: https://dashscope.aliyuncs.com/api/v1/embeddings
+#   api_key_env: DASHSCOPE_API_KEY
+#   model: text-embedding-v2
+
+# 示例：DeepSeek 原生 Embedding（OpenAI 兼容接口）
+# embedding_provider:
+#   kind: deepseek
+#   base_url: https://api.deepseek.com
+#   api_key_env: DEEPSEEK_API_KEY
+#   model: deepseek-embedding
+
+# 若使用 Claude，示例：
+# chat_provider:
+#   kind: anthropic
+#   api_url: https://api.anthropic.com
+#   api_key_env: ANTHROPIC_API_KEY
+#   model: claude-3-5-sonnet-latest
+# embedding_provider: 参见 openai_compat，建议使用 OpenAI/DeepSeek/Qwen 的 embeddings
+
+vector_store:
+  # kind 可选：qdrant | memory | rig_mem
+  kind: qdrant
+  url: http://localhost:6334
+  collection: kb_chunks
+
+generation:
+  use_rig_agent: true
+  # 留空则使用 chat_provider.model
+  model: 
+
+database:
+  url: postgres://postgres:postgres@localhost:5432/kb
+
+object_store:
+  endpoint: http://localhost:9000
+  access_key: minio
+  secret_key: minio123
+  bucket: kb-docs
+
+graph:
+  kind: neo4j
+  uri: bolt://localhost:7687
+  user: neo4j
+  password: test
+
+search:
+  kind: opensearch
+  url: http://localhost:9200
+  index: kb-docs
+
+# 统一抽取服务（可选）：用于解析 docx/pptx/xlsx/rtf/epub 等格式为纯文本
+# 若与 Admin Settings 配合，可通过设置以下 ENV 即可：EXTRACT_URL / EXTRACT_TOKEN
+extractor:
+  # 接收文件字节的 HTTP 接口（POST application/octet-stream -> text）
+  url: 
+  # 可选：令牌所在的环境变量名（例如 EXTRACTOR_API_KEY），启动时会注入为 EXTRACT_TOKEN 供请求 Bearer 使用
+  token_env: 

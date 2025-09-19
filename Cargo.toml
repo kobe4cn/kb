@@ -1,0 +1,13 @@
+[workspace]
+members = [
+  "crates/kb-core",
+  "crates/kb-error",
+  "crates/kb-rag",
+  "crates/kb-graph",
+  "crates/kb-llm",
+  "crates/kb-auth",
+  "apps/api",
+  "apps/worker",
+]
+resolver = "2"
+

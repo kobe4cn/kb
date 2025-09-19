@@ -1,0 +1,72 @@
+### 健康检查
+GET  http://localhost:8080/api/v1/health
+
+### 索引文本
+POST http://localhost:8080/api/v1/documents/text
+Content-Type: application/json
+
+{
+  "document_id": "doc-1",
+  "text": "这是一个示例文档，描述知识库平台的功能和特性。",
+  "page": 1
+}
+
+### 带元数据的文本索引
+POST http://localhost:8080/api/v1/documents/text_with_meta
+Content-Type: application/json
+
+{
+  "document_id": "doc-2",
+  "text": "平台支持 RAG、GraphRAG、词汇检索等多种检索模式。",
+  "page": 2,
+  "tenant_id": "tenant-001",
+  "source": "manual",
+  "tags": ["platform", "features"],
+  "created_at": 1726420000
+}
+
+### 基本查询
+POST http://localhost:8080/api/v1/query
+Content-Type: application/json
+
+{
+  "query": "平台有什么功能？",
+  "top_k": 3,
+  "mode": "rag"
+}
+
+### 带过滤和重排的查询
+POST http://localhost:8080/api/v1/query
+Content-Type: application/json
+
+{
+  "query": "平台能力？",
+  "top_k": 3,
+  "mode": "rag",
+  "rerank": true,
+  "filters": {
+    "tenant_id": "tenant-001",
+    "tags": ["platform", "features"]
+  }
+}
+
+### 工具调用测试
+POST http://localhost:8080/api/v1/query_trace
+Content-Type: application/json
+
+{
+  "query": "现在的时间是什么？",
+  "top_k": 2
+}
+
+
+
+### Qdrant Collections
+GET http://localhost:6333/collections
+
+### Qdrant documents
+GET http://localhost:6333/collections/kb_chunks
+
+
+### Qdrant delete document
+DELETE http://localhost:6333/collections/kb_chunks

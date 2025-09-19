@@ -1,0 +1,31 @@
+[package]
+name = "kb-rag"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kb-core = { path = "../kb-core" }
+kb-error = { path = "../kb-error" }
+kb-llm = { path = "../kb-llm" }
+serde = { version = "1", features = ["derive"] }
+async-trait = "0.1"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "macros", "sync"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Rig core crate (re-exported as `rig` in code). Do NOT use `rig-qdrant`.
+rig-core = { version = "0.20.0", features = ["derive", "pdf" ] }
+
+# Qdrant client is used by rig-qdrant query builder helpers
+qdrant-client = "1"
+
+rig-qdrant = "0.1.25"
+
+# Simple web loader helpers
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "json"] }
+html2text = "0.12"
+once_cell = "1"
+

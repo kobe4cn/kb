@@ -1,0 +1,7 @@
+.claude
+.vscode
+.env
+.venv
+.mypy_cache
+target
+apps/web-next/node_modules

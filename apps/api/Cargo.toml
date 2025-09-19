@@ -1,0 +1,40 @@
+[package]
+name = "kb-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.7", features = ["macros", "json", "multipart"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors", "compression-gzip", "auth"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+kb-core = { path = "../../crates/kb-core" }
+kb-error = { path = "../../crates/kb-error", features = ["axum"] }
+kb-rag = { path = "../../crates/kb-rag" }
+kb-llm = { path = "../../crates/kb-llm" }
+kb-auth = { path = "../../crates/kb-auth" }
+anyhow = "1"
+serde_yaml = "0.9"
+rig-core = { version = "0.19", features = ["derive"] }
+rig-qdrant = "0.1.24"
+qdrant-client = "1"
+tokio-stream = "0.1"
+futures = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+once_cell = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+html2text = "0.12"
+base64 = "0.22"
+redis = { version = "0.23", features = ["tokio-comp"] }
+dotenv = "0.15"
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+sled = "0.34"
+sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "json", "migrate", "chrono"] }
+
+[features]
+default = []
+pg = []

@@ -1,0 +1,264 @@
+openapi: 3.0.3
+info:
+  title: KB Platform API
+  version: 0.1.0
+  description: RAG + GraphRAG + 原文匹配 的统一查询与管理 API
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost:8080
+    description: Local Dev
+tags:
+  - name: query
+    description: 查询与对话
+  - name: documents
+    description: 文档管理与索引
+  - name: system
+    description: 系统健康与运维
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/query:
+    post:
+      tags: [query]
+      summary: 统一查询（RAG/Graph/Hybrid/原文匹配）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        '200':
+          description: 查询结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResponse'
+  /api/v1/chat/stream:
+    post:
+      tags: [query]
+      summary: 流式对话（SSE/WS）
+      description: 通过 SSE 返回 token 流；若不支持 SSE，返回 400。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: SSE stream
+  /api/v1/documents:
+    post:
+      tags: [documents]
+      summary: 上传文档
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                source:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+                visibility:
+                  type: string
+                  enum: [private, tenant, public]
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreated'
+  /api/v1/ingestions:
+    post:
+      tags: [documents]
+      summary: 触发索引任务（嵌入/FTS/图谱）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestionRequest'
+      responses:
+        '202':
+          description: 任务已入队
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAccepted'
+  /api/v1/documents/{id}:
+    get:
+      tags: [documents]
+      summary: 查询文档元数据与状态
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 文档详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+  /api/v1/health:
+    get:
+      tags: [system]
+      summary: 健康检查
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    QueryMode:
+      type: string
+      enum: [rag, graph, hybrid, lexical]
+    QueryFilter:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+        sources:
+          type: array
+          items:
+            type: string
+        date_range:
+          type: object
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+    QueryRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+        mode:
+          $ref: '#/components/schemas/QueryMode'
+        top_k:
+          type: integer
+          default: 5
+          minimum: 1
+          maximum: 50
+        rerank:
+          type: boolean
+          default: false
+        filters:
+          $ref: '#/components/schemas/QueryFilter'
+        stream:
+          type: boolean
+          default: false
+        include_raw_matches:
+          type: boolean
+          default: true
+    Citation:
+      type: object
+      properties:
+        document_id:
+          type: string
+        chunk_id:
+          type: string
+        page:
+          type: integer
+        score:
+          type: number
+          format: float
+        snippet:
+          type: string
+    QueryResponse:
+      type: object
+      properties:
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+        contexts:
+          type: array
+          items:
+            type: string
+        mode:
+          $ref: '#/components/schemas/QueryMode'
+        latency_ms:
+          type: integer
+    ChatRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+                enum: [system, user, assistant]
+              content:
+                type: string
+        query_options:
+          $ref: '#/components/schemas/QueryRequest'
+    DocumentCreated:
+      type: object
+      properties:
+        document_id:
+          type: string
+        status:
+          type: string
+          example: queued
+    IngestionRequest:
+      type: object
+      properties:
+        document_ids:
+          type: array
+          items:
+            type: string
+        run_graph:
+          type: boolean
+          default: true
+        run_vector:
+          type: boolean
+          default: true
+        run_lexical:
+          type: boolean
+          default: true
+    JobAccepted:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          example: queued
+
