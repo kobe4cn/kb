@@ -92,4 +92,3 @@ pub struct QueryResponse {
 }
 
 pub use kb_error::{KbError as Error, Result};
-

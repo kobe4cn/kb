@@ -1,13 +1,13 @@
 pub mod neo4j;
 
 use async_trait::async_trait;
-use kb_core::{Chunk, Result, QueryRequest, QueryResponse, Citation};
+use kb_core::{Chunk, Citation, QueryRequest, QueryResponse, Result};
 use kb_error::KbError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, instrument};
 
-pub use neo4j::{Neo4jGraphStore, Neo4jConfig, KnowledgeGraphBuilder, GraphStats};
+pub use neo4j::{GraphStats, KnowledgeGraphBuilder, Neo4jConfig, Neo4jGraphStore};
 
 /// 图存储抽象接口
 #[async_trait]
@@ -108,12 +108,21 @@ impl GraphRagEngine {
         let mut total_relationships = 0;
 
         for (i, document) in documents.iter().enumerate() {
-            debug!(doc_index = i, doc_length = document.len(), "处理文档构建图谱");
+            debug!(
+                doc_index = i,
+                doc_length = document.len(),
+                "处理文档构建图谱"
+            );
 
             // 这里应该调用 LLM 进行实体和关系抽取
             let triples = self.extract_triples_from_document(document).await?;
 
-            total_entities += triples.iter().map(|t| vec![&t.subject, &t.object]).flatten().collect::<std::collections::HashSet<_>>().len();
+            total_entities += triples
+                .iter()
+                .map(|t| vec![&t.subject, &t.object])
+                .flatten()
+                .collect::<std::collections::HashSet<_>>()
+                .len();
             total_relationships += triples.len();
 
             self.graph_store.upsert_triples(triples).await?;
@@ -155,9 +164,14 @@ impl GraphRagEngine {
 
         // 3. 去重并排序
         all_triples.sort_by(|a, b| {
-            b.confidence.unwrap_or(0.0).partial_cmp(&a.confidence.unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal)
+            b.confidence
+                .unwrap_or(0.0)
+                .partial_cmp(&a.confidence.unwrap_or(0.0))
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        all_triples.dedup_by(|a, b| a.subject == b.subject && a.predicate == b.predicate && a.object == b.object);
+        all_triples.dedup_by(|a, b| {
+            a.subject == b.subject && a.predicate == b.predicate && a.object == b.object
+        });
 
         // 4. 限制返回数量
         let max_triples = request.top_k.unwrap_or(10) as usize;
@@ -197,7 +211,9 @@ impl GraphRagEngine {
         }
 
         // 6. 生成回答（这里应该调用 LLM）
-        let answer = self.generate_graph_answer(&request.query, &contexts).await?;
+        let answer = self
+            .generate_graph_answer(&request.query, &contexts)
+            .await?;
 
         Ok(QueryResponse {
             answer,
@@ -227,13 +243,12 @@ impl GraphRagEngine {
         debug!(doc_length = document.len(), "从文档抽取三元组");
 
         // 模拟抽取结果
-        Ok(vec![
-            Triple::new(
-                "文档实体".to_string(),
-                "包含".to_string(),
-                "信息内容".to_string(),
-            ).with_confidence(0.8),
-        ])
+        Ok(vec![Triple::new(
+            "文档实体".to_string(),
+            "包含".to_string(),
+            "信息内容".to_string(),
+        )
+        .with_confidence(0.8)])
     }
 
     /// 从查询中抽取实体（模拟实现）
@@ -294,4 +309,3 @@ impl GraphStore for NoopGraphStore {
         Ok(vec![])
     }
 }
-

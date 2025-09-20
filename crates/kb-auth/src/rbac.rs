@@ -1,19 +1,38 @@
+use crate::models::AuthContext;
+use crate::permissions::SystemRole;
 use async_trait::async_trait;
+use kb_error::{KbError, Result};
 use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use kb_error::{KbError, Result};
-use crate::models::AuthContext;
-use crate::permissions::SystemRole;
 
 /// 权限检查特质
 #[async_trait]
 pub trait PermissionCheck: Send + Sync {
-    async fn has_permission(&self, user_id: Uuid, permission: &str, tenant_id: Option<Uuid>) -> Result<bool>;
-    async fn has_any_permission(&self, user_id: Uuid, permissions: &[&str], tenant_id: Option<Uuid>) -> Result<bool>;
-    async fn has_all_permissions(&self, user_id: Uuid, permissions: &[&str], tenant_id: Option<Uuid>) -> Result<bool>;
+    async fn has_permission(
+        &self,
+        user_id: Uuid,
+        permission: &str,
+        tenant_id: Option<Uuid>,
+    ) -> Result<bool>;
+    async fn has_any_permission(
+        &self,
+        user_id: Uuid,
+        permissions: &[&str],
+        tenant_id: Option<Uuid>,
+    ) -> Result<bool>;
+    async fn has_all_permissions(
+        &self,
+        user_id: Uuid,
+        permissions: &[&str],
+        tenant_id: Option<Uuid>,
+    ) -> Result<bool>;
     async fn has_role(&self, user_id: Uuid, role: &str, tenant_id: Option<Uuid>) -> Result<bool>;
-    async fn get_user_permissions(&self, user_id: Uuid, tenant_id: Option<Uuid>) -> Result<HashSet<String>>;
+    async fn get_user_permissions(
+        &self,
+        user_id: Uuid,
+        tenant_id: Option<Uuid>,
+    ) -> Result<HashSet<String>>;
     async fn get_user_roles(&self, user_id: Uuid, tenant_id: Option<Uuid>) -> Result<Vec<String>>;
 }
 
@@ -21,7 +40,7 @@ pub trait PermissionCheck: Send + Sync {
 pub struct RbacService {
     db_pool: PgPool,
     permission_cache: tokio::sync::RwLock<HashMap<String, HashSet<String>>>, // user_key -> permissions
-    role_cache: tokio::sync::RwLock<HashMap<String, Vec<String>>>, // user_key -> roles
+    role_cache: tokio::sync::RwLock<HashMap<String, Vec<String>>>,           // user_key -> roles
 }
 
 impl RbacService {
@@ -164,19 +183,19 @@ impl RbacService {
 
     /// 检查用户是否为租户管理员
     pub async fn is_tenant_admin(&self, user_id: Uuid, tenant_id: Uuid) -> Result<bool> {
-        self.has_role(user_id, SystemRole::TENANT_ADMIN, Some(tenant_id)).await
+        self.has_role(user_id, SystemRole::TENANT_ADMIN, Some(tenant_id))
+            .await
     }
 
     /// 创建默认系统角色
     pub async fn create_system_roles(&self) -> Result<()> {
         for role_name in SystemRole::all() {
             let permissions = SystemRole::get_default_permissions(role_name);
-            let permissions_json = serde_json::to_value(permissions).map_err(|e| {
-                KbError::Internal {
+            let permissions_json =
+                serde_json::to_value(permissions).map_err(|e| KbError::Internal {
                     message: format!("Failed to serialize permissions: {}", e),
                     details: None,
-                }
-            })?;
+                })?;
 
             sqlx::query(
                 r#"
@@ -204,17 +223,32 @@ impl RbacService {
 
 #[async_trait]
 impl PermissionCheck for RbacService {
-    async fn has_permission(&self, user_id: Uuid, permission: &str, tenant_id: Option<Uuid>) -> Result<bool> {
+    async fn has_permission(
+        &self,
+        user_id: Uuid,
+        permission: &str,
+        tenant_id: Option<Uuid>,
+    ) -> Result<bool> {
         let permissions = self.get_user_permissions(user_id, tenant_id).await?;
         Ok(permissions.contains(permission))
     }
 
-    async fn has_any_permission(&self, user_id: Uuid, permissions: &[&str], tenant_id: Option<Uuid>) -> Result<bool> {
+    async fn has_any_permission(
+        &self,
+        user_id: Uuid,
+        permissions: &[&str],
+        tenant_id: Option<Uuid>,
+    ) -> Result<bool> {
         let user_permissions = self.get_user_permissions(user_id, tenant_id).await?;
         Ok(permissions.iter().any(|p| user_permissions.contains(*p)))
     }
 
-    async fn has_all_permissions(&self, user_id: Uuid, permissions: &[&str], tenant_id: Option<Uuid>) -> Result<bool> {
+    async fn has_all_permissions(
+        &self,
+        user_id: Uuid,
+        permissions: &[&str],
+        tenant_id: Option<Uuid>,
+    ) -> Result<bool> {
         let user_permissions = self.get_user_permissions(user_id, tenant_id).await?;
         Ok(permissions.iter().all(|p| user_permissions.contains(*p)))
     }
@@ -224,7 +258,11 @@ impl PermissionCheck for RbacService {
         Ok(roles.contains(&role.to_string()))
     }
 
-    async fn get_user_permissions(&self, user_id: Uuid, tenant_id: Option<Uuid>) -> Result<HashSet<String>> {
+    async fn get_user_permissions(
+        &self,
+        user_id: Uuid,
+        tenant_id: Option<Uuid>,
+    ) -> Result<HashSet<String>> {
         let cache_key = Self::cache_key(user_id, tenant_id);
 
         // 尝试从缓存获取
@@ -301,7 +339,10 @@ impl PermissionCheck for RbacService {
             context: None,
         })?;
 
-        let roles: Vec<String> = rows.into_iter().map(|row| row.get::<String, _>("name")).collect();
+        let roles: Vec<String> = rows
+            .into_iter()
+            .map(|row| row.get::<String, _>("name"))
+            .collect();
 
         // 更新缓存
         {

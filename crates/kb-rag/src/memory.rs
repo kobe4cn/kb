@@ -1,6 +1,6 @@
-use crate::engine::{BaseRagEngine, RagEngine, RagEngineConfig, RagMeta};
+use crate::engine::{BaseRagEngine, RagDocumentChunk, RagEngine, RagEngineConfig, RagMeta};
 use async_trait::async_trait;
-use kb_core::{QueryRequest, QueryResponse, Citation};
+use kb_core::{Citation, QueryRequest, QueryResponse};
 use kb_error::{KbError, Result};
 use kb_llm::{ChatModel, EmbedModel};
 use serde::{Deserialize, Serialize};
@@ -50,10 +50,7 @@ impl MemoryRagEngine {
         Ok(Self::new_internal(chat_model, embed_model, None))
     }
 
-    pub fn new_memory(
-        _embed_model: String,
-        chat_model: Arc<dyn kb_llm::ChatModel>,
-    ) -> Self {
+    pub fn new_memory(_embed_model: String, chat_model: Arc<dyn kb_llm::ChatModel>) -> Self {
         let embed_model = Arc::new(MockEmbedModel);
         Self::new_internal(chat_model, embed_model, None)
     }
@@ -82,7 +79,10 @@ pub struct MockEmbedModel;
 impl EmbedModel for MockEmbedModel {
     async fn embed(&self, texts: &[String]) -> kb_llm::Result<Vec<Vec<f32>>> {
         // 返回固定维度的随机向量用于测试
-        Ok(texts.iter().map(|_| vec![0.1, 0.2, 0.3, 0.4, 0.5]).collect())
+        Ok(texts
+            .iter()
+            .map(|_| vec![0.1, 0.2, 0.3, 0.4, 0.5])
+            .collect())
     }
 }
 
@@ -107,19 +107,29 @@ impl MemoryRagEngine {
         chunks.retain(|chunk| chunk.document_id != document_id);
         let removed_count = original_len - chunks.len();
 
-        tracing::info!("Removed {} chunks for document {}", removed_count, document_id);
+        tracing::info!(
+            "Removed {} chunks for document {}",
+            removed_count,
+            document_id
+        );
         Ok(removed_count)
     }
 
     /// 向量相似度搜索
     #[instrument(skip(self, query_embedding))]
-    async fn vector_search(&self, query_embedding: &[f32], top_k: usize, filters: Option<&serde_json::Value>) -> Result<Vec<(f32, MemoryChunk)>> {
+    async fn vector_search(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+        filters: Option<&serde_json::Value>,
+    ) -> Result<Vec<(f32, MemoryChunk)>> {
         let chunks = self.chunks.read().await;
 
         let mut scored_chunks: Vec<(f32, &MemoryChunk)> = chunks
             .iter()
             .map(|chunk| {
-                let similarity = BaseRagEngine::cosine_similarity(query_embedding, &chunk.embedding);
+                let similarity =
+                    BaseRagEngine::cosine_similarity(query_embedding, &chunk.embedding);
                 (similarity, chunk)
             })
             .collect();
@@ -208,7 +218,9 @@ impl RagEngine for MemoryRagEngine {
         let start_time = std::time::Instant::now();
 
         // 生成查询向量
-        let query_embedding = self.base.embed_model
+        let query_embedding = self
+            .base
+            .embed_model
             .embed(&[req.query.clone()])
             .await
             .map_err(|e| KbError::EmbeddingService {
@@ -222,7 +234,9 @@ impl RagEngine for MemoryRagEngine {
 
         // 执行向量搜索
         let top_k = req.top_k.unwrap_or(self.base.config.default_top_k) as usize;
-        let search_results = self.vector_search(&query_embedding, top_k, req.filters.as_ref()).await?;
+        let search_results = self
+            .vector_search(&query_embedding, top_k, req.filters.as_ref())
+            .await?;
 
         // 过滤低相似度结果
         let filtered_results: Vec<(f32, MemoryChunk)> = search_results
@@ -261,7 +275,10 @@ impl RagEngine for MemoryRagEngine {
 
         // 格式化上下文并生成回答
         let formatted_context = self.base.format_context(&citations);
-        let answer = self.base.generate_answer(&formatted_context, &req.query).await?;
+        let answer = self
+            .base
+            .generate_answer(&formatted_context, &req.query)
+            .await?;
 
         let latency_ms = start_time.elapsed().as_millis() as i64;
 
@@ -289,17 +306,22 @@ impl RagEngine for MemoryRagEngine {
         page: Option<i32>,
         meta: Option<RagMeta>,
     ) -> Result<()> {
-        // 分块处理文本
-        let chunks_text = self.base.chunk_text(text);
+        // 分块处理文本并生成统一结构
+        let chunk_records = self
+            .base
+            .chunk_document(document_id, text, page, meta.clone());
 
-        if chunks_text.is_empty() {
+        if chunk_records.is_empty() {
             tracing::warn!("No chunks created for document {}", document_id);
             return Ok(());
         }
 
         // 为所有块生成嵌入
-        let embeddings = self.base.embed_model
-            .embed(&chunks_text)
+        let embed_inputs: Vec<String> = chunk_records.iter().map(|c| c.text.clone()).collect();
+        let embeddings = self
+            .base
+            .embed_model
+            .embed(&embed_inputs)
             .await
             .map_err(|e| KbError::EmbeddingService {
                 provider: "memory".to_string(),
@@ -309,17 +331,40 @@ impl RagEngine for MemoryRagEngine {
 
         // 创建块对象
         let mut new_chunks = Vec::new();
-        for (i, (chunk_text, embedding)) in chunks_text.into_iter().zip(embeddings).enumerate() {
-            let chunk = MemoryChunk {
-                id: format!("{}_{}", document_id, i),
-                document_id: document_id.to_string(),
-                text: chunk_text,
+        for (chunk, embedding) in chunk_records.into_iter().zip(embeddings) {
+            let RagDocumentChunk {
+                document_id,
+                chunk_id,
+                page,
+                tenant_id,
+                tags,
+                source,
+                created_at,
+                custom_fields,
+                text,
+            } = chunk;
+
+            let created_at_dt = chrono::DateTime::<chrono::Utc>::from_timestamp(created_at, 0)
+                .unwrap_or_else(|| chrono::Utc::now());
+
+            let meta = RagMeta {
+                tenant_id,
+                source,
+                tags,
+                created_at: Some(created_at),
+                custom_fields,
+            };
+
+            let memory_chunk = MemoryChunk {
+                id: chunk_id,
+                document_id,
+                text,
                 embedding,
                 page,
-                meta: meta.clone(),
-                created_at: chrono::Utc::now(),
+                meta: Some(meta),
+                created_at: created_at_dt,
             };
-            new_chunks.push(chunk);
+            new_chunks.push(memory_chunk);
         }
 
         // 添加到索引

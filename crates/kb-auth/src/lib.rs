@@ -1,19 +1,19 @@
-pub mod models;
 pub mod jwt;
 pub mod middleware;
-pub mod rbac;
-pub mod session;
+pub mod models;
 pub mod password;
 pub mod permissions;
+pub mod rbac;
+pub mod session;
 
 // 重新导出核心类型
-pub use models::{User, Role, UserRole, ApiKey, UserStatus, AuthContext};
-pub use jwt::{JwtService, Claims};
-pub use middleware::{AuthMiddleware, RequirePermissionLayer, RequireAnyPermissionLayer};
-pub use rbac::{RbacService, PermissionCheck};
-pub use session::{SessionService, SessionInfo};
+pub use jwt::{Claims, JwtService};
+pub use middleware::{AuthMiddleware, RequireAnyPermissionLayer, RequirePermissionLayer};
+pub use models::{ApiKey, AuthContext, Role, User, UserRole, UserStatus};
 pub use password::PasswordService;
 pub use permissions::{Permission, SystemRole};
+pub use rbac::{PermissionCheck, RbacService};
+pub use session::{SessionInfo, SessionService};
 
 // 错误类型
 pub use kb_error::{KbError, Result};

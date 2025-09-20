@@ -1,6 +1,6 @@
 use crate::engine::{RagEngine, RagEngineConfig, RagMeta};
-use crate::qdrant::QdrantRagEngine;
 use crate::memory::MemoryRagEngine;
+use crate::qdrantss::QdrantRagEngine;
 use async_trait::async_trait;
 use kb_core::{QueryRequest, QueryResponse};
 use kb_error::{KbError, Result};
@@ -50,7 +50,8 @@ impl MultiProviderRagEngine {
             chat_model,
             embed_model,
             config,
-        ).await?;
+        )
+        .await?;
 
         Ok(Self {
             storage_type: StorageType::Qdrant {
@@ -97,11 +98,10 @@ impl MultiProviderRagEngine {
                     chat_model,
                     embed_model,
                     config,
-                ).await
+                )
+                .await
             }
-            "memory" => {
-                Ok(Self::new_memory(chat_model, embed_model, config))
-            }
+            "memory" => Ok(Self::new_memory(chat_model, embed_model, config)),
             _ => Err(KbError::Configuration {
                 key: "storage.type".to_string(),
                 reason: format!("Unsupported storage type: {}", storage_type),
@@ -139,12 +139,21 @@ impl MultiProviderRagEngine {
         config: Option<RagEngineConfig>,
     ) -> Result<()> {
         let new_engine: Box<dyn RagEngine> = match &new_storage_type {
-            StorageType::Memory => {
-                Box::new(MemoryRagEngine::from_models(chat_model, embed_model, config))
-            }
-            StorageType::Qdrant { url, collection } => {
-                Box::new(QdrantRagEngine::new(url.clone(), collection.clone(), chat_model, embed_model, config).await?)
-            }
+            StorageType::Memory => Box::new(MemoryRagEngine::from_models(
+                chat_model,
+                embed_model,
+                config,
+            )),
+            StorageType::Qdrant { url, collection } => Box::new(
+                QdrantRagEngine::new(
+                    url.clone(),
+                    collection.clone(),
+                    chat_model,
+                    embed_model,
+                    config,
+                )
+                .await?,
+            ),
         };
 
         self.storage_type = new_storage_type;
@@ -225,7 +234,9 @@ impl RagEngine for MultiProviderRagEngine {
         page: Option<i32>,
         meta: Option<RagMeta>,
     ) -> Result<()> {
-        self.engine.add_document_text_with_meta(document_id, text, page, meta).await
+        self.engine
+            .add_document_text_with_meta(document_id, text, page, meta)
+            .await
     }
 }
 

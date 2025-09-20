@@ -1,6 +1,6 @@
 use bcrypt::{hash, verify, DEFAULT_COST};
-use rand::{distributions::Alphanumeric, Rng};
 use kb_error::{KbError, Result};
+use rand::{distributions::Alphanumeric, Rng};
 
 /// 密码服务 - 处理密码哈希、验证和生成
 pub struct PasswordService;
@@ -62,7 +62,9 @@ impl PasswordService {
         let has_lower = password.chars().any(|c| c.is_ascii_lowercase());
         let has_upper = password.chars().any(|c| c.is_ascii_uppercase());
         let has_digit = password.chars().any(|c| c.is_ascii_digit());
-        let has_special = password.chars().any(|c| "!@#$%^&*()_+-=[]{}|;:,.<>?".contains(c));
+        let has_special = password
+            .chars()
+            .any(|c| "!@#$%^&*()_+-=[]{}|;:,.<>?".contains(c));
 
         let complexity_score = [has_lower, has_upper, has_digit, has_special]
             .iter()
@@ -77,11 +79,22 @@ impl PasswordService {
 
         // 检查常见弱密码
         let weak_passwords = [
-            "password", "123456", "12345678", "qwerty", "abc123",
-            "password123", "admin", "root", "user", "test"
+            "password",
+            "123456",
+            "12345678",
+            "qwerty",
+            "abc123",
+            "password123",
+            "admin",
+            "root",
+            "user",
+            "test",
         ];
 
-        if weak_passwords.iter().any(|&weak| password.to_lowercase().contains(weak)) {
+        if weak_passwords
+            .iter()
+            .any(|&weak| password.to_lowercase().contains(weak))
+        {
             return Err(KbError::Validation {
                 message: "密码不能包含常见的弱密码模式".to_string(),
             });

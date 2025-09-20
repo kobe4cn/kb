@@ -674,7 +674,10 @@ async fn query(
             .and_then(|g| g.model.clone())
             .unwrap_or(cfg.chat_provider.model);
         let embed_model = cfg.embedding_provider.model;
-        info!("RigQdrantRagEngine:chat_model={}, embed_model={}", chat_model, embed_model);
+        info!(
+            "RigQdrantRagEngine:chat_model={}, embed_model={}",
+            chat_model, embed_model
+        );
 
         let client = providers::openai::Client::from_env();
         let embed = client.embedding_model(&embed_model);

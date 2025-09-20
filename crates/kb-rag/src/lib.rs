@@ -1,26 +1,26 @@
 pub mod engine;
-pub mod memory;
-pub mod qdrant;
-pub mod multi_provider;
-pub mod rerank;
-pub mod lexical;
 pub mod hybrid;
-pub mod qdrants;
+pub mod lexical;
+pub mod memory;
+pub mod multi_provider;
+pub mod qdrantss;
+pub mod qdrant;
+pub mod rerank;
 
 // 重新导出新的模块化架构
 pub use engine::{
-    RagEngine, GraphRagEngine, RagMeta, HealthStatus, EngineStats,
-    BaseRagEngine, RagEngineConfig, NoopRagEngine
+    BaseRagEngine, EngineStats, GraphRagEngine, HealthStatus, NoopRagEngine, RagDocumentChunk,
+    RagEngine, RagEngineConfig, RagMeta,
 };
+pub use hybrid::{FusionStrategy, HybridConfig, HybridRagEngine, HybridStats, ScoreNormalization};
+pub use lexical::{LexicalConfig, LexicalIndexStats, LexicalRagEngine};
 pub use memory::MemoryRagEngine;
-pub use qdrant::QdrantRagEngine;
 pub use multi_provider::{MultiProviderRagEngine as RealMultiProviderRagEngine, StorageType};
+pub use qdrantss::QdrantRagEngine;
 pub use rerank::{Reranker, RerankerFactory};
-pub use lexical::{LexicalRagEngine, LexicalConfig, LexicalIndexStats};
-pub use hybrid::{HybridRagEngine, HybridConfig, HybridStats, ScoreNormalization, FusionStrategy};
 
 // 重新导出核心类型
-pub use kb_core::{QueryRequest, QueryResponse, Citation};
+pub use kb_core::{Citation, QueryRequest, QueryResponse};
 pub use kb_error::{KbError, Result};
 
 // 兼容性别名和占位实现
@@ -50,10 +50,7 @@ impl RigQdrantRagEngine {
 }
 
 impl RigInMemoryRagEngine {
-    pub fn new(
-        _embed_model: String,
-        chat_model: Arc<dyn kb_llm::ChatModel>,
-    ) -> Self {
+    pub fn new(_embed_model: String, chat_model: Arc<dyn kb_llm::ChatModel>) -> Self {
         // 为了兼容性，我们创建一个默认的嵌入模型
         let embed_model = Arc::new(memory::MockEmbedModel);
         let engine = MemoryRagEngine::from_models(chat_model, embed_model, None);
@@ -85,7 +82,9 @@ impl RagEngine for RigQdrantRagEngine {
         page: Option<i32>,
         meta: Option<RagMeta>,
     ) -> Result<()> {
-        self.0.add_document_text_with_meta(document_id, text, page, meta).await
+        self.0
+            .add_document_text_with_meta(document_id, text, page, meta)
+            .await
     }
 }
 
@@ -102,7 +101,9 @@ impl RagEngine for RigInMemoryRagEngine {
         page: Option<i32>,
         meta: Option<RagMeta>,
     ) -> Result<()> {
-        self.0.add_document_text_with_meta(document_id, text, page, meta).await
+        self.0
+            .add_document_text_with_meta(document_id, text, page, meta)
+            .await
     }
 }
 
@@ -119,10 +120,11 @@ impl RagEngine for MultiProviderRagEngine {
         page: Option<i32>,
         meta: Option<RagMeta>,
     ) -> Result<()> {
-        self.0.add_document_text_with_meta(document_id, text, page, meta).await
+        self.0
+            .add_document_text_with_meta(document_id, text, page, meta)
+            .await
     }
 }
-
 
 // 占位 GraphRAG 实现（向后兼容）
 pub struct DefaultGraphRagEngine;
@@ -155,23 +157,20 @@ pub use tokio::sync::Semaphore;
 
 // 抽取服务相关函数
 pub async fn extract_text_via_service(path: &str) -> Result<String> {
-    let url = std::env::var("EXTRACT_URL")
-        .map_err(|_| KbError::Configuration {
-            key: "EXTRACT_URL".to_string(),
-            reason: "environment variable not set".to_string(),
-        })?;
+    let url = std::env::var("EXTRACT_URL").map_err(|_| KbError::Configuration {
+        key: "EXTRACT_URL".to_string(),
+        reason: "environment variable not set".to_string(),
+    })?;
 
     let filename = std::path::Path::new(path)
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("upload.bin");
 
-    let data = tokio::fs::read(path)
-        .await
-        .map_err(|e| KbError::Internal {
-            message: format!("Failed to read file: {}", e),
-            details: Some(path.to_string()),
-        })?;
+    let data = tokio::fs::read(path).await.map_err(|e| KbError::Internal {
+        message: format!("Failed to read file: {}", e),
+        details: Some(path.to_string()),
+    })?;
 
     extract_text_via_service_bytes(filename, &data, &url).await
 }
@@ -236,13 +235,10 @@ pub async fn extract_text_via_service_bytes(
         match result {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    let text = resp
-                        .text()
-                        .await
-                        .map_err(|e| KbError::Network {
-                            operation: "extract_response_read".to_string(),
-                            message: e.to_string(),
-                        })?;
+                    let text = resp.text().await.map_err(|e| KbError::Network {
+                        operation: "extract_response_read".to_string(),
+                        message: e.to_string(),
+                    })?;
                     return Ok(text);
                 } else {
                     let status = resp.status();
@@ -255,7 +251,11 @@ pub async fn extract_text_via_service_bytes(
                     }
                     return Err(KbError::ServiceUnavailable {
                         service: format!("extract_service ({})", status),
-                        retry_after: if retryable { Some(Duration::from_secs(30)) } else { None },
+                        retry_after: if retryable {
+                            Some(Duration::from_secs(30))
+                        } else {
+                            None
+                        },
                     });
                 }
             }
@@ -275,11 +275,10 @@ pub async fn extract_text_via_service_bytes(
 }
 
 pub async fn extract_service_health() -> Result<()> {
-    let url = std::env::var("EXTRACT_URL")
-        .map_err(|_| KbError::Configuration {
-            key: "EXTRACT_URL".to_string(),
-            reason: "environment variable not set".to_string(),
-        })?;
+    let url = std::env::var("EXTRACT_URL").map_err(|_| KbError::Configuration {
+        key: "EXTRACT_URL".to_string(),
+        reason: "environment variable not set".to_string(),
+    })?;
 
     let client = reqwest::Client::new();
 

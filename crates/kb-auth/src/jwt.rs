@@ -1,22 +1,22 @@
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use kb_error::{KbError, Result};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use kb_error::{KbError, Result};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,        // subject (user ID)
-    pub username: String,   // username
-    pub email: String,      // email
-    pub tenant_id: Option<String>, // tenant ID
+    pub sub: String,                // subject (user ID)
+    pub username: String,           // username
+    pub email: String,              // email
+    pub tenant_id: Option<String>,  // tenant ID
     pub session_id: Option<String>, // session ID
-    pub exp: i64,          // expiration timestamp
-    pub iat: i64,          // issued at timestamp
-    pub iss: String,       // issuer
-    pub aud: String,       // audience
-    pub jti: String,       // JWT ID
-    pub typ: String,       // token type: "access" or "refresh"
+    pub exp: i64,                   // expiration timestamp
+    pub iat: i64,                   // issued at timestamp
+    pub iss: String,                // issuer
+    pub aud: String,                // audience
+    pub jti: String,                // JWT ID
+    pub typ: String,                // token type: "access" or "refresh"
 }
 
 impl Claims {
@@ -142,19 +142,12 @@ impl JwtService {
         session_id: Option<String>,
     ) -> Result<String> {
         let claims = Claims::new_access_token(
-            user_id,
-            username,
-            email,
-            tenant_id,
-            session_id,
-            24, // 24小时过期
+            user_id, username, email, tenant_id, session_id, 24, // 24小时过期
         );
 
-        encode(&Header::default(), &claims, &self.encoding_key).map_err(|e| {
-            KbError::Internal {
-                message: format!("Failed to generate access token: {}", e),
-                details: None,
-            }
+        encode(&Header::default(), &claims, &self.encoding_key).map_err(|e| KbError::Internal {
+            message: format!("Failed to generate access token: {}", e),
+            details: None,
         })
     }
 
@@ -168,19 +161,12 @@ impl JwtService {
         session_id: Option<String>,
     ) -> Result<String> {
         let claims = Claims::new_refresh_token(
-            user_id,
-            username,
-            email,
-            tenant_id,
-            session_id,
-            30, // 30天过期
+            user_id, username, email, tenant_id, session_id, 30, // 30天过期
         );
 
-        encode(&Header::default(), &claims, &self.encoding_key).map_err(|e| {
-            KbError::Internal {
-                message: format!("Failed to generate refresh token: {}", e),
-                details: None,
-            }
+        encode(&Header::default(), &claims, &self.encoding_key).map_err(|e| KbError::Internal {
+            message: format!("Failed to generate refresh token: {}", e),
+            details: None,
         })
     }
 
@@ -188,27 +174,19 @@ impl JwtService {
     pub fn verify_token(&self, token: &str) -> Result<Claims> {
         decode::<Claims>(token, &self.decoding_key, &self.validation)
             .map(|data| data.claims)
-            .map_err(|e| {
-                match e.kind() {
-                    jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
-                        KbError::Authentication {
-                            message: "Token已过期".to_string(),
-                        }
-                    }
-                    jsonwebtoken::errors::ErrorKind::InvalidToken => {
-                        KbError::Authentication {
-                            message: "无效的Token".to_string(),
-                        }
-                    }
-                    jsonwebtoken::errors::ErrorKind::InvalidSignature => {
-                        KbError::Authentication {
-                            message: "Token签名无效".to_string(),
-                        }
-                    }
-                    _ => KbError::Authentication {
-                        message: format!("Token验证失败: {}", e),
-                    }
-                }
+            .map_err(|e| match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => KbError::Authentication {
+                    message: "Token已过期".to_string(),
+                },
+                jsonwebtoken::errors::ErrorKind::InvalidToken => KbError::Authentication {
+                    message: "无效的Token".to_string(),
+                },
+                jsonwebtoken::errors::ErrorKind::InvalidSignature => KbError::Authentication {
+                    message: "Token签名无效".to_string(),
+                },
+                _ => KbError::Authentication {
+                    message: format!("Token验证失败: {}", e),
+                },
             })
     }
 
@@ -266,13 +244,8 @@ impl JwtService {
             session_id.clone(),
         )?;
 
-        let refresh_token = self.generate_refresh_token(
-            user_id,
-            username,
-            email,
-            tenant_id,
-            session_id,
-        )?;
+        let refresh_token =
+            self.generate_refresh_token(user_id, username, email, tenant_id, session_id)?;
 
         Ok((access_token, refresh_token))
     }

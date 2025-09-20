@@ -115,7 +115,11 @@ impl Neo4jGraphStore {
     }
 
     /// 执行自定义 Cypher 查询
-    pub async fn execute_cypher(&self, query: &str, params: Option<HashMap<String, serde_json::Value>>) -> Result<Vec<HashMap<String, serde_json::Value>>> {
+    pub async fn execute_cypher(
+        &self,
+        query: &str,
+        params: Option<HashMap<String, serde_json::Value>>,
+    ) -> Result<Vec<HashMap<String, serde_json::Value>>> {
         debug!(query = %query, params = ?params, "执行 Cypher 查询");
 
         // 在真实实现中：
@@ -133,7 +137,12 @@ impl Neo4jGraphStore {
 
     /// 创建实体节点
     #[allow(dead_code)]
-    async fn create_entity_node(&self, entity: &str, entity_type: Option<&str>, _properties: Option<&HashMap<String, serde_json::Value>>) -> Result<String> {
+    async fn create_entity_node(
+        &self,
+        entity: &str,
+        entity_type: Option<&str>,
+        _properties: Option<&HashMap<String, serde_json::Value>>,
+    ) -> Result<String> {
         let node_id = uuid::Uuid::new_v4().to_string();
         let _label = entity_type.unwrap_or("Entity");
 
@@ -165,7 +174,13 @@ impl Neo4jGraphStore {
 
     /// 创建关系
     #[allow(dead_code)]
-    async fn create_relationship(&self, from_entity: &str, to_entity: &str, relationship_type: &str, _properties: Option<&HashMap<String, serde_json::Value>>) -> Result<()> {
+    async fn create_relationship(
+        &self,
+        from_entity: &str,
+        to_entity: &str,
+        relationship_type: &str,
+        _properties: Option<&HashMap<String, serde_json::Value>>,
+    ) -> Result<()> {
         debug!(
             from = %from_entity,
             to = %to_entity,
@@ -313,7 +328,11 @@ impl KnowledgeGraphBuilder {
 
     /// 从文本构建知识图谱
     #[instrument(skip(self, text))]
-    pub async fn build_from_text(&self, text: &str, chunk_info: Option<&Chunk>) -> Result<GraphBuildResult> {
+    pub async fn build_from_text(
+        &self,
+        text: &str,
+        chunk_info: Option<&Chunk>,
+    ) -> Result<GraphBuildResult> {
         info!("从文本构建知识图谱");
 
         // 1. 实体抽取
@@ -359,21 +378,23 @@ impl KnowledgeGraphBuilder {
         debug!(prompt_len = prompt.len(), "准备进行实体抽取");
 
         // 模拟实体抽取结果
-        let mock_entities = vec![
-            ExtractedEntity {
-                name: "示例实体".to_string(),
-                entity_type: "概念".to_string(),
-                confidence: 0.85,
-                description: Some("从文本中抽取的示例实体".to_string()),
-                properties: HashMap::new(),
-            }
-        ];
+        let mock_entities = vec![ExtractedEntity {
+            name: "示例实体".to_string(),
+            entity_type: "概念".to_string(),
+            confidence: 0.85,
+            description: Some("从文本中抽取的示例实体".to_string()),
+            properties: HashMap::new(),
+        }];
 
         Ok(mock_entities)
     }
 
     /// 关系抽取（使用 LLM）
-    async fn extract_relationships(&self, text: &str, entities: &[ExtractedEntity]) -> Result<Vec<ExtractedRelationship>> {
+    async fn extract_relationships(
+        &self,
+        text: &str,
+        entities: &[ExtractedEntity],
+    ) -> Result<Vec<ExtractedRelationship>> {
         let entity_names: Vec<&str> = entities.iter().map(|e| e.name.as_str()).collect();
 
         let prompt = format!(
@@ -389,16 +410,14 @@ impl KnowledgeGraphBuilder {
         );
 
         // 模拟关系抽取结果
-        let mock_relationships = vec![
-            ExtractedRelationship {
-                subject: "实体1".to_string(),
-                predicate: "关联".to_string(),
-                object: "实体2".to_string(),
-                confidence: 0.80,
-                description: Some("从文本中抽取的示例关系".to_string()),
-                properties: HashMap::new(),
-            }
-        ];
+        let mock_relationships = vec![ExtractedRelationship {
+            subject: "实体1".to_string(),
+            predicate: "关联".to_string(),
+            object: "实体2".to_string(),
+            confidence: 0.80,
+            description: Some("从文本中抽取的示例关系".to_string()),
+            properties: HashMap::new(),
+        }];
 
         Ok(mock_relationships)
     }

@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
+use kb_error::{KbError, Result};
 use redis::{AsyncCommands, Client as RedisClient};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use uuid::Uuid;
-use kb_error::{KbError, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
@@ -138,7 +138,10 @@ impl SessionService {
     /// 更新会话访问时间
     pub async fn touch_session(&self, session_id: &str) -> Result<()> {
         if let Some(redis_client) = &self.redis_client {
-            if let Some(mut session) = self.get_session_from_redis(redis_client, session_id).await? {
+            if let Some(mut session) = self
+                .get_session_from_redis(redis_client, session_id)
+                .await?
+            {
                 session.touch();
                 self.save_session_to_redis(redis_client, &session).await?;
             }
@@ -149,18 +152,22 @@ impl SessionService {
     /// 删除会话
     pub async fn delete_session(&self, session_id: &str) -> Result<()> {
         if let Some(redis_client) = &self.redis_client {
-            let mut conn = redis_client.get_async_connection().await.map_err(|e| {
-                KbError::Network {
-                    operation: "redis_connection".to_string(),
-                    message: e.to_string(),
-                }
-            })?;
+            let mut conn =
+                redis_client
+                    .get_async_connection()
+                    .await
+                    .map_err(|e| KbError::Network {
+                        operation: "redis_connection".to_string(),
+                        message: e.to_string(),
+                    })?;
 
             let key = format!("session:{}", session_id);
-            conn.del::<_, ()>(&key).await.map_err(|e| KbError::Network {
-                operation: "redis_delete".to_string(),
-                message: e.to_string(),
-            })?;
+            conn.del::<_, ()>(&key)
+                .await
+                .map_err(|e| KbError::Network {
+                    operation: "redis_delete".to_string(),
+                    message: e.to_string(),
+                })?;
         }
         Ok(())
     }
@@ -179,12 +186,14 @@ impl SessionService {
     /// 获取用户的所有活跃会话
     pub async fn get_user_sessions(&self, user_id: Uuid) -> Result<Vec<SessionInfo>> {
         if let Some(redis_client) = &self.redis_client {
-            let mut conn = redis_client.get_async_connection().await.map_err(|e| {
-                KbError::Network {
-                    operation: "redis_connection".to_string(),
-                    message: e.to_string(),
-                }
-            })?;
+            let mut conn =
+                redis_client
+                    .get_async_connection()
+                    .await
+                    .map_err(|e| KbError::Network {
+                        operation: "redis_connection".to_string(),
+                        message: e.to_string(),
+                    })?;
 
             // 获取所有会话键
             let pattern = "session:*";
@@ -213,12 +222,14 @@ impl SessionService {
     /// 清理过期会话
     pub async fn cleanup_expired_sessions(&self) -> Result<usize> {
         if let Some(redis_client) = &self.redis_client {
-            let mut conn = redis_client.get_async_connection().await.map_err(|e| {
-                KbError::Network {
-                    operation: "redis_connection".to_string(),
-                    message: e.to_string(),
-                }
-            })?;
+            let mut conn =
+                redis_client
+                    .get_async_connection()
+                    .await
+                    .map_err(|e| KbError::Network {
+                        operation: "redis_connection".to_string(),
+                        message: e.to_string(),
+                    })?;
 
             let pattern = "session:*";
             let keys: Vec<String> = conn.keys(pattern).await.map_err(|e| KbError::Network {
@@ -231,10 +242,12 @@ impl SessionService {
                 if let Ok(session_data) = conn.get::<_, String>(&key).await {
                     if let Ok(session) = serde_json::from_str::<SessionInfo>(&session_data) {
                         if session.is_expired() {
-                            conn.del::<_, ()>(&key).await.map_err(|e| KbError::Network {
-                                operation: "redis_delete".to_string(),
-                                message: e.to_string(),
-                            })?;
+                            conn.del::<_, ()>(&key)
+                                .await
+                                .map_err(|e| KbError::Network {
+                                    operation: "redis_delete".to_string(),
+                                    message: e.to_string(),
+                                })?;
                             cleaned_count += 1;
                         }
                     }
@@ -259,7 +272,10 @@ impl SessionService {
     /// 刷新会话过期时间
     pub async fn refresh_session(&self, session_id: &str, additional_hours: i64) -> Result<()> {
         if let Some(redis_client) = &self.redis_client {
-            if let Some(mut session) = self.get_session_from_redis(redis_client, session_id).await? {
+            if let Some(mut session) = self
+                .get_session_from_redis(redis_client, session_id)
+                .await?
+            {
                 session.extend_expiry(additional_hours);
                 session.touch();
                 self.save_session_to_redis(redis_client, &session).await?;
@@ -274,12 +290,13 @@ impl SessionService {
         redis_client: &RedisClient,
         session: &SessionInfo,
     ) -> Result<()> {
-        let mut conn = redis_client.get_async_connection().await.map_err(|e| {
-            KbError::Network {
+        let mut conn = redis_client
+            .get_async_connection()
+            .await
+            .map_err(|e| KbError::Network {
                 operation: "redis_connection".to_string(),
                 message: e.to_string(),
-            }
-        })?;
+            })?;
 
         let key = format!("session:{}", session.session_id);
         let session_data = serde_json::to_string(session).map_err(|e| KbError::Internal {
@@ -289,12 +306,12 @@ impl SessionService {
 
         let ttl_seconds = (session.expires_at - Utc::now()).num_seconds().max(0) as u64;
 
-        conn.set_ex(&key, session_data, ttl_seconds as usize).await.map_err(|e| {
-            KbError::Network {
+        conn.set_ex(&key, session_data, ttl_seconds as usize)
+            .await
+            .map_err(|e| KbError::Network {
                 operation: "redis_setex".to_string(),
                 message: e.to_string(),
-            }
-        })?;
+            })?;
 
         Ok(())
     }
@@ -305,12 +322,13 @@ impl SessionService {
         redis_client: &RedisClient,
         session_id: &str,
     ) -> Result<Option<SessionInfo>> {
-        let mut conn = redis_client.get_async_connection().await.map_err(|e| {
-            KbError::Network {
+        let mut conn = redis_client
+            .get_async_connection()
+            .await
+            .map_err(|e| KbError::Network {
                 operation: "redis_connection".to_string(),
                 message: e.to_string(),
-            }
-        })?;
+            })?;
 
         let key = format!("session:{}", session_id);
         let session_data: Option<String> = conn.get(&key).await.map_err(|e| KbError::Network {
@@ -319,19 +337,21 @@ impl SessionService {
         })?;
 
         if let Some(data) = session_data {
-            let session: SessionInfo = serde_json::from_str(&data).map_err(|e| {
-                KbError::Internal {
+            let session: SessionInfo =
+                serde_json::from_str(&data).map_err(|e| KbError::Internal {
                     message: format!("Failed to deserialize session: {}", e),
                     details: None,
-                }
-            })?;
+                })?;
 
             if session.is_expired() {
                 // 删除过期会话
-                let _: () = conn.del::<_, ()>(&key).await.map_err(|e| KbError::Network {
-                    operation: "redis_delete".to_string(),
-                    message: e.to_string(),
-                })?;
+                let _: () = conn
+                    .del::<_, ()>(&key)
+                    .await
+                    .map_err(|e| KbError::Network {
+                        operation: "redis_delete".to_string(),
+                        message: e.to_string(),
+                    })?;
                 Ok(None)
             } else {
                 Ok(Some(session))

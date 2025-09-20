@@ -157,9 +157,12 @@ async fn logout(
     // 简化实现：在生产环境中需要从中间件获取当前用户的session_id
     // 然后删除对应的会话
 
-    Ok((StatusCode::OK, ResponseJson(serde_json::json!({
-        "message": "登出成功"
-    }))))
+    Ok((
+        StatusCode::OK,
+        ResponseJson(serde_json::json!({
+            "message": "登出成功"
+        })),
+    ))
 }
 
 /// 刷新访问令牌
@@ -168,7 +171,9 @@ async fn refresh_token(
     Json(request): Json<RefreshTokenRequest>,
 ) -> Result<impl IntoResponse> {
     // 验证刷新令牌
-    let claims = auth_services.jwt_service.verify_refresh_token(&request.refresh_token)?;
+    let claims = auth_services
+        .jwt_service
+        .verify_refresh_token(&request.refresh_token)?;
 
     // 生成新的访问令牌
     let new_access_token = auth_services.jwt_service.generate_access_token(
@@ -179,10 +184,13 @@ async fn refresh_token(
         claims.session_id.clone(),
     )?;
 
-    Ok((StatusCode::OK, ResponseJson(serde_json::json!({
-        "access_token": new_access_token,
-        "expires_in": 3600
-    }))))
+    Ok((
+        StatusCode::OK,
+        ResponseJson(serde_json::json!({
+            "access_token": new_access_token,
+            "expires_in": 3600
+        })),
+    ))
 }
 
 /// 用户注册
@@ -225,4 +233,3 @@ async fn change_password(
         details: None,
     }
 }
-

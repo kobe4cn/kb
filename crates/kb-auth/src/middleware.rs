@@ -8,12 +8,7 @@ use std::sync::Arc;
 use tower_http::auth::{AsyncAuthorizeRequest, AsyncRequireAuthorizationLayer};
 use uuid::Uuid;
 
-use crate::{
-    jwt::JwtService,
-    models::AuthContext,
-    rbac::RbacService,
-    session::SessionService,
-};
+use crate::{jwt::JwtService, models::AuthContext, rbac::RbacService, session::SessionService};
 use kb_error::{KbError, Result};
 
 /// 认证中间件
@@ -58,12 +53,10 @@ impl AuthMiddleware {
                         }
 
                         // 获取完整的认证上下文
-                        return self.rbac_service.get_auth_context(
-                            user_id,
-                            tenant_id,
-                            claims.session_id,
-                            None,
-                        ).await;
+                        return self
+                            .rbac_service
+                            .get_auth_context(user_id, tenant_id, claims.session_id, None)
+                            .await;
                     }
                 }
             }
@@ -124,7 +117,11 @@ where
     type RequestBody = B;
     type ResponseBody = axum::body::Body;
     type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = std::result::Result<Request<B>, Response<Self::ResponseBody>>> + Send>,
+        Box<
+            dyn std::future::Future<
+                    Output = std::result::Result<Request<B>, Response<Self::ResponseBody>>,
+                > + Send,
+        >,
     >;
 
     fn authorize(&mut self, request: Request<B>) -> Self::Future {
@@ -181,7 +178,11 @@ where
     type RequestBody = B;
     type ResponseBody = axum::body::Body;
     type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = std::result::Result<Request<B>, Response<Self::ResponseBody>>> + Send>,
+        Box<
+            dyn std::future::Future<
+                    Output = std::result::Result<Request<B>, Response<Self::ResponseBody>>,
+                > + Send,
+        >,
     >;
 
     fn authorize(&mut self, request: Request<B>) -> Self::Future {
@@ -221,7 +222,11 @@ where
     type RequestBody = B;
     type ResponseBody = axum::body::Body;
     type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = std::result::Result<Request<B>, Response<Self::ResponseBody>>> + Send>,
+        Box<
+            dyn std::future::Future<
+                    Output = std::result::Result<Request<B>, Response<Self::ResponseBody>>,
+                > + Send,
+        >,
     >;
 
     fn authorize(&mut self, request: Request<B>) -> Self::Future {
@@ -231,7 +236,8 @@ where
             let auth_context = request.extensions().get::<AuthContext>();
 
             if let Some(auth) = auth_context {
-                let permission_refs: Vec<&str> = required_permissions.iter().map(|s| s.as_str()).collect();
+                let permission_refs: Vec<&str> =
+                    required_permissions.iter().map(|s| s.as_str()).collect();
                 if auth.has_any_permission(&permission_refs) || auth.is_super_admin() {
                     Ok(request)
                 } else {
@@ -260,7 +266,11 @@ where
     type RequestBody = B;
     type ResponseBody = axum::body::Body;
     type Future = std::pin::Pin<
-        Box<dyn std::future::Future<Output = std::result::Result<Request<B>, Response<Self::ResponseBody>>> + Send>,
+        Box<
+            dyn std::future::Future<
+                    Output = std::result::Result<Request<B>, Response<Self::ResponseBody>>,
+                > + Send,
+        >,
     >;
 
     fn authorize(&mut self, request: Request<B>) -> Self::Future {
@@ -302,16 +312,14 @@ where
 
 // 工具函数
 fn extract_session_from_cookie(cookie_str: &str) -> Option<String> {
-    cookie_str
-        .split(';')
-        .find_map(|part| {
-            let trimmed = part.trim();
-            if trimmed.starts_with("session_id=") {
-                Some(trimmed[11..].to_string())
-            } else {
-                None
-            }
-        })
+    cookie_str.split(';').find_map(|part| {
+        let trimmed = part.trim();
+        if trimmed.starts_with("session_id=") {
+            Some(trimmed[11..].to_string())
+        } else {
+            None
+        }
+    })
 }
 
 fn extract_tenant_id_from_path(path: &str) -> Option<&str> {
@@ -325,11 +333,7 @@ fn extract_tenant_id_from_path(path: &str) -> Option<&str> {
 }
 
 /// 审计日志中间件
-pub async fn audit_middleware(
-    auth: Option<AuthContext>,
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn audit_middleware(auth: Option<AuthContext>, request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let uri = request.uri().clone();
     let start_time = std::time::Instant::now();
@@ -365,7 +369,10 @@ mod tests {
     #[test]
     fn test_extract_session_from_cookie() {
         let cookie = "session_id=sess_12345; other=value";
-        assert_eq!(extract_session_from_cookie(cookie), Some("sess_12345".to_string()));
+        assert_eq!(
+            extract_session_from_cookie(cookie),
+            Some("sess_12345".to_string())
+        );
 
         let cookie_no_session = "other=value; another=data";
         assert_eq!(extract_session_from_cookie(cookie_no_session), None);
@@ -374,7 +381,10 @@ mod tests {
     #[test]
     fn test_extract_tenant_id_from_path() {
         let path = "/api/v1/tenants/550e8400-e29b-41d4-a716-446655440000/documents";
-        assert_eq!(extract_tenant_id_from_path(path), Some("550e8400-e29b-41d4-a716-446655440000"));
+        assert_eq!(
+            extract_tenant_id_from_path(path),
+            Some("550e8400-e29b-41d4-a716-446655440000")
+        );
 
         let path_no_tenant = "/api/v1/users";
         assert_eq!(extract_tenant_id_from_path(path_no_tenant), None);

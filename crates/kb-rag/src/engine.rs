@@ -1,8 +1,11 @@
 use async_trait::async_trait;
-use kb_core::{QueryRequest, QueryResponse, Citation};
-use kb_error::Result;
+use chrono::Utc;
+use kb_core::{Citation, QueryRequest, QueryResponse};
+use kb_error::Result as KbResult;
 use kb_llm::{ChatModel, EmbedModel};
+use rig::Embed;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::sync::Arc;
 use tracing::instrument;
 
@@ -10,7 +13,7 @@ use tracing::instrument;
 #[async_trait]
 pub trait RagEngine: Send + Sync {
     /// 执行查询
-    async fn query(&self, req: QueryRequest) -> Result<QueryResponse>;
+    async fn query(&self, req: QueryRequest) -> KbResult<QueryResponse>;
 
     /// 添加文档文本
     async fn add_document_text(
@@ -18,8 +21,9 @@ pub trait RagEngine: Send + Sync {
         document_id: &str,
         text: &str,
         page: Option<i32>,
-    ) -> Result<()> {
-        self.add_document_text_with_meta(document_id, text, page, None).await
+    ) -> KbResult<()> {
+        self.add_document_text_with_meta(document_id, text, page, None)
+            .await
     }
 
     /// 添加带元数据的文档文本
@@ -29,15 +33,15 @@ pub trait RagEngine: Send + Sync {
         text: &str,
         page: Option<i32>,
         meta: Option<RagMeta>,
-    ) -> Result<()>;
+    ) -> KbResult<()>;
 
     /// 健康检查
-    async fn health_check(&self) -> Result<HealthStatus> {
+    async fn health_check(&self) -> KbResult<HealthStatus> {
         Ok(HealthStatus::Healthy)
     }
 
     /// 获取引擎统计信息
-    async fn stats(&self) -> Result<EngineStats> {
+    async fn stats(&self) -> KbResult<EngineStats> {
         Ok(EngineStats::default())
     }
 }
@@ -45,9 +49,9 @@ pub trait RagEngine: Send + Sync {
 /// GraphRAG 引擎抽象
 #[async_trait]
 pub trait GraphRagEngine: Send + Sync {
-    async fn query(&self, req: QueryRequest) -> Result<QueryResponse>;
-    async fn build_graph(&self, documents: &[String]) -> Result<()>;
-    async fn get_entity_neighbors(&self, entity: &str, hops: u8) -> Result<Vec<String>>;
+    async fn query(&self, req: QueryRequest) -> KbResult<QueryResponse>;
+    async fn build_graph(&self, documents: &[String]) -> KbResult<()>;
+    async fn get_entity_neighbors(&self, entity: &str, hops: u8) -> KbResult<Vec<String>>;
 }
 
 /// RAG 文档元数据
@@ -57,7 +61,90 @@ pub struct RagMeta {
     pub source: Option<String>,
     pub tags: Option<Vec<String>>,
     pub created_at: Option<i64>,
-    pub custom_fields: Option<serde_json::Value>,
+    pub custom_fields: Option<Value>,
+}
+
+impl RagMeta {
+    /// 提供一个归一化的创建时间戳，默认使用当前时间
+    pub fn resolved_created_at(&self) -> i64 {
+        self.created_at.unwrap_or_else(|| Utc::now().timestamp())
+    }
+
+    /// 合并两个元数据，`other` 为优先值
+    pub fn merge(&self, other: Option<Self>) -> Self {
+        match other {
+            Some(mut override_meta) => {
+                if override_meta.tenant_id.is_none() {
+                    override_meta.tenant_id = self.tenant_id.clone();
+                }
+                if override_meta.source.is_none() {
+                    override_meta.source = self.source.clone();
+                }
+                if override_meta.tags.is_none() {
+                    override_meta.tags = self.tags.clone();
+                }
+                if override_meta.created_at.is_none() {
+                    override_meta.created_at = self.created_at;
+                }
+                if override_meta.custom_fields.is_none() {
+                    override_meta.custom_fields = self.custom_fields.clone();
+                }
+                override_meta
+            }
+            None => self.clone(),
+        }
+    }
+}
+
+/// 标准化的文档分块数据结构，统一向量引擎与倒排索引所需字段
+#[derive(Debug, Clone, Serialize, Deserialize, Embed)]
+pub struct RagDocumentChunk {
+    pub document_id: String,
+    pub chunk_id: String,
+    pub page: Option<i32>,
+    pub tenant_id: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub source: Option<String>,
+    pub created_at: i64,
+    pub custom_fields: Option<Value>,
+    #[embed]
+    pub text: String,
+}
+
+impl RagDocumentChunk {
+    pub fn from_text(
+        document_id: impl Into<String>,
+        chunk_id: impl Into<String>,
+        text: impl Into<String>,
+        page: Option<i32>,
+        meta: Option<RagMeta>,
+    ) -> Self {
+        let mut meta = meta.unwrap_or_default();
+        // 确保 chunk 拥有明确的创建时间
+        let created_at = meta.resolved_created_at();
+
+        Self {
+            document_id: document_id.into(),
+            chunk_id: chunk_id.into(),
+            page,
+            tenant_id: meta.tenant_id.take(),
+            tags: meta.tags.take(),
+            source: meta.source.take(),
+            created_at,
+            custom_fields: meta.custom_fields.take(),
+            text: text.into(),
+        }
+    }
+
+    pub fn as_meta(&self) -> RagMeta {
+        RagMeta {
+            tenant_id: self.tenant_id.clone(),
+            source: self.source.clone(),
+            tags: self.tags.clone(),
+            created_at: Some(self.created_at),
+            custom_fields: self.custom_fields.clone(),
+        }
+    }
 }
 
 /// 引擎健康状态
@@ -168,6 +255,31 @@ impl BaseRagEngine {
         chunks
     }
 
+    /// 将文本分块并结合元数据生成统一的 `RagDocumentChunk` 列表
+    pub fn chunk_document(
+        &self,
+        document_id: &str,
+        text: &str,
+        page: Option<i32>,
+        meta: Option<RagMeta>,
+    ) -> Vec<RagDocumentChunk> {
+        let chunks = self.chunk_text(text);
+        chunks
+            .into_iter()
+            .enumerate()
+            .map(|(idx, chunk_text)| {
+                let chunk_id = format!("{}#{}", document_id, idx);
+                RagDocumentChunk::from_text(
+                    document_id.to_string(),
+                    chunk_id,
+                    chunk_text,
+                    page,
+                    meta.clone(),
+                )
+            })
+            .collect()
+    }
+
     /// 通用的上下文格式化逻辑
     pub fn format_context(&self, citations: &[Citation]) -> String {
         citations
@@ -189,7 +301,7 @@ impl BaseRagEngine {
 
     /// 通用的 LLM 查询逻辑
     #[instrument(skip(self, context, query))]
-    pub async fn generate_answer(&self, context: &str, query: &str) -> Result<String> {
+    pub async fn generate_answer(&self, context: &str, query: &str) -> KbResult<String> {
         let system = "You are a helpful assistant. Answer the user's question based on the provided context. If the context doesn't contain enough information to answer the question, say so clearly. Always cite your sources using [1], [2], etc. when referencing information from the context.";
 
         // 检查上下文长度
@@ -245,7 +357,7 @@ pub struct NoopRagEngine;
 
 #[async_trait]
 impl RagEngine for NoopRagEngine {
-    async fn query(&self, req: QueryRequest) -> Result<QueryResponse> {
+    async fn query(&self, req: QueryRequest) -> KbResult<QueryResponse> {
         Ok(QueryResponse {
             answer: format!("[noop] Query: {}", req.query),
             citations: vec![],
@@ -261,7 +373,7 @@ impl RagEngine for NoopRagEngine {
         _text: &str,
         _page: Option<i32>,
         _meta: Option<RagMeta>,
-    ) -> Result<()> {
+    ) -> KbResult<()> {
         Ok(())
     }
 }

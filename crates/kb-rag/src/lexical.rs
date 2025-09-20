@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use kb_core::{QueryRequest, QueryResponse, Citation};
+use kb_core::{Citation, QueryRequest, QueryResponse};
 use kb_error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, instrument};
 
-use crate::engine::{RagEngine, RagMeta, BaseRagEngine, HealthStatus, EngineStats};
+use crate::engine::{BaseRagEngine, EngineStats, HealthStatus, RagEngine, RagMeta};
 
 /// 词汇检索引擎 - 基于关键词匹配和 TF-IDF 评分
 pub struct LexicalRagEngine {
@@ -39,11 +39,18 @@ impl Default for LexicalConfig {
     fn default() -> Self {
         let mut stop_words = HashSet::new();
         // 中文停用词
-        for word in &["的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好", "自己", "这"] {
+        for word in &[
+            "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "一个", "上",
+            "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好", "自己", "这",
+        ] {
             stop_words.insert(word.to_string());
         }
         // 英文停用词
-        for word in &["the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "this", "that", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should"] {
+        for word in &[
+            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with",
+            "by", "this", "that", "is", "are", "was", "were", "be", "been", "have", "has", "had",
+            "do", "does", "did", "will", "would", "could", "should",
+        ] {
             stop_words.insert(word.to_string());
         }
 
@@ -104,46 +111,64 @@ impl LexicalRagEngine {
 
     /// 添加文档到词汇索引
     #[instrument(skip(self, text))]
-    pub async fn index_document(&self, document_id: &str, text: &str, page: Option<i32>, meta: Option<RagMeta>) -> Result<()> {
-        let chunks = self.base.chunk_text(text);
+    pub async fn index_document(
+        &self,
+        document_id: &str,
+        text: &str,
+        page: Option<i32>,
+        meta: Option<RagMeta>,
+    ) -> Result<()> {
+        let chunk_records = self
+            .base
+            .chunk_document(document_id, text, page, meta.clone());
         let mut index = self.index.write().await;
 
-        for (chunk_idx, chunk_text) in chunks.iter().enumerate() {
-            let chunk_id = format!("{}#{}", document_id, chunk_idx);
-            let tokens = self.tokenize(chunk_text);
+        for chunk in chunk_records.iter() {
+            let tokens = self.tokenize(&chunk.text);
             let term_freq = self.calculate_term_frequency(&tokens);
 
             // 更新倒排索引
             for term in term_freq.keys() {
-                index.inverted_index
+                index
+                    .inverted_index
                     .entry(term.clone())
                     .or_insert_with(HashSet::new)
-                    .insert(chunk_id.clone());
+                    .insert(chunk.chunk_id.clone());
             }
 
             // 存储文档信息
             let doc_info = DocumentInfo {
-                document_id: document_id.to_string(),
-                chunk_id: chunk_id.clone(),
-                content: chunk_text.clone(),
-                page,
-                meta: meta.clone(),
+                document_id: chunk.document_id.clone(),
+                chunk_id: chunk.chunk_id.clone(),
+                content: chunk.text.clone(),
+                page: chunk.page,
+                meta: Some(chunk.as_meta()),
                 word_count: tokens.len() as u32,
             };
 
-            index.documents.insert(chunk_id.clone(), doc_info);
-            index.document_term_freq.insert(chunk_id, term_freq);
+            index.documents.insert(chunk.chunk_id.clone(), doc_info);
+            index
+                .document_term_freq
+                .insert(chunk.chunk_id.clone(), term_freq);
         }
 
         index.total_documents = index.documents.len() as u32;
-        debug!(document_id, chunks = chunks.len(), "文档已添加到词汇索引");
+        debug!(
+            document_id,
+            chunks = chunk_records.len(),
+            "文档已添加到词汇索引"
+        );
 
         Ok(())
     }
 
     /// 执行词汇搜索
     #[instrument(skip(self))]
-    pub async fn search(&self, query: &str, max_results: Option<usize>) -> Result<Vec<LexicalSearchResult>> {
+    pub async fn search(
+        &self,
+        query: &str,
+        max_results: Option<usize>,
+    ) -> Result<Vec<LexicalSearchResult>> {
         let query_tokens = self.tokenize(query);
         if query_tokens.is_empty() {
             return Ok(vec![]);
@@ -184,7 +209,11 @@ impl LexicalRagEngine {
         }
 
         // 按分数排序
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // 限制结果数量
         let max_results = max_results.unwrap_or(10);
@@ -209,12 +238,19 @@ impl LexicalRagEngine {
         };
 
         // 简单的分词：按空白字符和标点分割
-        let chinese_punct = ['，', '。', '！', '？', '；', '：', '"', '"', '\'', '\'', '（', '）', '【', '】', '《', '》'];
+        let chinese_punct = [
+            '，', '。', '！', '？', '；', '：', '"', '"', '\'', '\'', '（', '）', '【', '】', '《',
+            '》',
+        ];
         let tokens: Vec<String> = text
-            .split(|c: char| c.is_whitespace() || c.is_ascii_punctuation() || chinese_punct.contains(&c))
+            .split(|c: char| {
+                c.is_whitespace() || c.is_ascii_punctuation() || chinese_punct.contains(&c)
+            })
             .filter_map(|word| {
                 let trimmed = word.trim();
-                if trimmed.len() >= self.config.min_word_length && !self.config.stop_words.contains(trimmed) {
+                if trimmed.len() >= self.config.min_word_length
+                    && !self.config.stop_words.contains(trimmed)
+                {
                     Some(trimmed.to_string())
                 } else {
                     None
@@ -236,7 +272,12 @@ impl LexicalRagEngine {
     }
 
     /// 计算 TF-IDF 分数
-    fn calculate_score(&self, query_tokens: &[String], chunk_id: &str, index: &LexicalIndex) -> f32 {
+    fn calculate_score(
+        &self,
+        query_tokens: &[String],
+        chunk_id: &str,
+        index: &LexicalIndex,
+    ) -> f32 {
         if let Some(doc_term_freq) = index.document_term_freq.get(chunk_id) {
             let mut score = 0.0;
             let mut matched_terms = 0;
@@ -249,7 +290,8 @@ impl LexicalRagEngine {
                     let tf = term_freq as f32;
 
                     // IDF 分数（逆文档频率）
-                    let doc_freq = index.inverted_index
+                    let doc_freq = index
+                        .inverted_index
                         .get(query_term)
                         .map(|docs| docs.len())
                         .unwrap_or(1) as f32;
@@ -263,7 +305,8 @@ impl LexicalRagEngine {
 
             // 关键词匹配度奖励
             if matched_terms > 0 {
-                let keyword_score = (matched_terms as f32 / query_tokens.len() as f32) * self.config.keyword_weight;
+                let keyword_score =
+                    (matched_terms as f32 / query_tokens.len() as f32) * self.config.keyword_weight;
                 score += keyword_score;
             }
 
@@ -274,7 +317,12 @@ impl LexicalRagEngine {
     }
 
     /// 找到匹配的词汇
-    fn find_matched_terms(&self, query_tokens: &[String], chunk_id: &str, index: &LexicalIndex) -> Vec<String> {
+    fn find_matched_terms(
+        &self,
+        query_tokens: &[String],
+        chunk_id: &str,
+        index: &LexicalIndex,
+    ) -> Vec<String> {
         if let Some(doc_term_freq) = index.document_term_freq.get(chunk_id) {
             query_tokens
                 .iter()
@@ -330,7 +378,12 @@ impl LexicalRagEngine {
             total_documents: index.total_documents,
             total_terms: index.inverted_index.len() as u32,
             average_document_length: if index.total_documents > 0 {
-                index.documents.values().map(|doc| doc.word_count).sum::<u32>() as f32 / index.total_documents as f32
+                index
+                    .documents
+                    .values()
+                    .map(|doc| doc.word_count)
+                    .sum::<u32>() as f32
+                    / index.total_documents as f32
             } else {
                 0.0
             },
@@ -364,7 +417,9 @@ impl RagEngine for LexicalRagEngine {
         let start_time = std::time::Instant::now();
 
         // 执行词汇搜索
-        let search_results = self.search(&req.query, req.top_k.map(|k| k as usize)).await?;
+        let search_results = self
+            .search(&req.query, req.top_k.map(|k| k as usize))
+            .await?;
 
         if search_results.is_empty() {
             return Ok(QueryResponse {
@@ -431,7 +486,7 @@ impl RagEngine for LexicalRagEngine {
         Ok(EngineStats {
             total_documents: index_stats.total_documents as u64,
             total_chunks: index_stats.total_documents as u64, // 在词汇索引中，文档和chunk是一对一的
-            index_size_bytes: 0, // 可以计算内存使用
+            index_size_bytes: 0,                              // 可以计算内存使用
             last_updated: Some(chrono::Utc::now()),
             query_count: 0, // 可以添加计数器
             average_query_latency_ms: 0.0,
@@ -450,7 +505,12 @@ mod tests {
 
     #[async_trait]
     impl kb_llm::ChatModel for MockChatModel {
-        async fn chat(&self, _system: &str, _context: &str, _query: &str) -> kb_llm::Result<String> {
+        async fn chat(
+            &self,
+            _system: &str,
+            _context: &str,
+            _query: &str,
+        ) -> kb_llm::Result<String> {
             Ok("Mock response".to_string())
         }
     }
@@ -487,13 +547,24 @@ mod tests {
         let engine = create_test_engine();
 
         // 添加文档
-        engine.add_document_text("doc1", "Rust is a systems programming language", None).await.unwrap();
-        engine.add_document_text("doc2", "Python is a high-level programming language", None).await.unwrap();
+        engine
+            .add_document_text("doc1", "Rust is a systems programming language", None)
+            .await
+            .unwrap();
+        engine
+            .add_document_text("doc2", "Python is a high-level programming language", None)
+            .await
+            .unwrap();
 
         // 搜索
-        let results = engine.search("programming language", Some(10)).await.unwrap();
+        let results = engine
+            .search("programming language", Some(10))
+            .await
+            .unwrap();
         assert_eq!(results.len(), 2);
         assert!(results[0].score > 0.0);
-        assert!(results[0].matched_terms.contains(&"programming".to_string()));
+        assert!(results[0]
+            .matched_terms
+            .contains(&"programming".to_string()));
     }
 }

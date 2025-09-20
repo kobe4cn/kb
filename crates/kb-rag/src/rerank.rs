@@ -80,7 +80,11 @@ impl Reranker for KeywordReranker {
         }
 
         // 按新分数排序
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         tracing::debug!(
             query = %query,
@@ -192,7 +196,11 @@ impl Reranker for CohereReranker {
 
         // 如果有多个批次，需要再次排序
         if results.len() > self.max_chunks_per_request {
-            reranked_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            reranked_results.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
 
         Ok(reranked_results)
@@ -212,7 +220,8 @@ impl Reranker for CohereReranker {
             return_documents: Some(false),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.api_url)
             .bearer_auth(&self.api_key)
             .header("Cohere-Version", "2022-12-06")
@@ -247,7 +256,8 @@ impl CohereReranker {
             return_documents: Some(false),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.api_url)
             .bearer_auth(&self.api_key)
             .header("Cohere-Version", "2022-12-06")
@@ -272,12 +282,11 @@ impl CohereReranker {
             });
         }
 
-        let cohere_response: CohereRerankResponse = response.json().await.map_err(|e| {
-            KbError::Serialization {
+        let cohere_response: CohereRerankResponse =
+            response.json().await.map_err(|e| KbError::Serialization {
                 format: "json".to_string(),
                 message: e.to_string(),
-            }
-        })?;
+            })?;
 
         // 重新排序结果
         let mut indexed_scores: Vec<(usize, f32)> = cohere_response
@@ -343,7 +352,8 @@ impl SemanticReranker {
             }
         })?;
 
-        if let (Some(query_emb), Some(doc_emb)) = (query_embeddings.first(), doc_embeddings.first()) {
+        if let (Some(query_emb), Some(doc_emb)) = (query_embeddings.first(), doc_embeddings.first())
+        {
             Ok(cosine_similarity(query_emb, doc_emb))
         } else {
             Ok(0.0)
@@ -356,14 +366,20 @@ impl Reranker for SemanticReranker {
     #[instrument(skip(self, results))]
     async fn rerank(&self, query: &str, mut results: Vec<Citation>) -> Result<Vec<Citation>> {
         for citation in &mut results {
-            let semantic_score = self.calculate_semantic_similarity(query, &citation.snippet).await?;
+            let semantic_score = self
+                .calculate_semantic_similarity(query, &citation.snippet)
+                .await?;
 
             if semantic_score >= self.similarity_threshold {
                 citation.score = citation.score * (1.0 + semantic_score * self.boost_factor);
             }
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         tracing::info!(
             query = %query,
@@ -407,7 +423,11 @@ impl Reranker for LengthReranker {
             citation.score = citation.score * length_score;
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         tracing::info!(
             query = %query,
@@ -617,7 +637,11 @@ impl RerankerFactory {
         similarity_threshold: f32,
         boost_factor: f32,
     ) -> Box<dyn Reranker> {
-        Box::new(SemanticReranker::new(embed_model, similarity_threshold, boost_factor))
+        Box::new(SemanticReranker::new(
+            embed_model,
+            similarity_threshold,
+            boost_factor,
+        ))
     }
 
     /// 创建长度重排器

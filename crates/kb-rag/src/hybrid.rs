@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use kb_core::{QueryRequest, QueryResponse, Citation};
+use kb_core::{Citation, QueryRequest, QueryResponse};
 use kb_error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, instrument};
 
-use crate::engine::{RagEngine, RagMeta, HealthStatus, EngineStats};
+use crate::engine::{EngineStats, HealthStatus, RagEngine, RagMeta};
 use crate::rerank::Reranker;
 
 /// 混合检索引擎 - 结合多种检索方法
@@ -251,9 +251,8 @@ impl HybridRagEngine {
                 }
                 ScoreNormalization::ZScore => {
                     let mean = scores.iter().sum::<f32>() / scores.len() as f32;
-                    let variance = scores.iter()
-                        .map(|s| (s - mean) * (s - mean))
-                        .sum::<f32>() / scores.len() as f32;
+                    let variance = scores.iter().map(|s| (s - mean) * (s - mean)).sum::<f32>()
+                        / scores.len() as f32;
                     let std_dev = variance.sqrt();
 
                     for &idx in indices {
@@ -283,7 +282,10 @@ impl HybridRagEngine {
         let mut citation_scores: HashMap<String, (Citation, f32, Vec<String>)> = HashMap::new();
 
         for result in results {
-            let key = format!("{}#{}", result.citation.document_id, result.citation.chunk_id);
+            let key = format!(
+                "{}#{}",
+                result.citation.document_id, result.citation.chunk_id
+            );
 
             let weight = match result.engine_type.as_str() {
                 "vector" => self.config.vector_weight,
@@ -298,18 +300,10 @@ impl HybridRagEngine {
 
             // 根据融合策略计算分数
             let contribution = match self.config.fusion_strategy {
-                FusionStrategy::WeightedSum => {
-                    result.normalized_score * weight
-                }
-                FusionStrategy::RRF { k } => {
-                    weight / (k + result.original_rank as f32 + 1.0)
-                }
-                FusionStrategy::CombSum => {
-                    result.normalized_score
-                }
-                FusionStrategy::CombMNZ => {
-                    result.normalized_score * weight
-                }
+                FusionStrategy::WeightedSum => result.normalized_score * weight,
+                FusionStrategy::RRF { k } => weight / (k + result.original_rank as f32 + 1.0),
+                FusionStrategy::CombSum => result.normalized_score,
+                FusionStrategy::CombMNZ => result.normalized_score * weight,
             };
 
             *combined_score += contribution;
@@ -341,7 +335,11 @@ impl HybridRagEngine {
             })
             .collect();
 
-        final_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        final_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(final_results)
     }
@@ -376,7 +374,9 @@ impl HybridRagEngine {
             vector_stats,
             lexical_stats,
             graph_stats,
-            total_engines: 1 + self.lexical_engine.is_some() as u8 + self.graph_engine.is_some() as u8,
+            total_engines: 1
+                + self.lexical_engine.is_some() as u8
+                + self.graph_engine.is_some() as u8,
             reranker_enabled: self.reranker.is_some(),
         })
     }
@@ -412,15 +412,18 @@ impl RagEngine for HybridRagEngine {
         }
 
         // 使用向量引擎来生成回答（因为它有完整的 LLM 集成）
-        let vector_response = self.vector_engine.query(QueryRequest {
-            query: req.query.clone(),
-            mode: Some("vector".to_string()),
-            top_k: Some(citations.len() as u16),
-            filters: req.filters.clone(),
-            rerank: req.rerank,
-            include_raw_matches: req.include_raw_matches,
-            stream: req.stream,
-        }).await?;
+        let vector_response = self
+            .vector_engine
+            .query(QueryRequest {
+                query: req.query.clone(),
+                mode: Some("vector".to_string()),
+                top_k: Some(citations.len() as u16),
+                filters: req.filters.clone(),
+                rerank: req.rerank,
+                include_raw_matches: req.include_raw_matches,
+                stream: req.stream,
+            })
+            .await?;
 
         // 替换引用结果为混合检索的结果
         let contexts: Vec<String> = citations.iter().map(|c| c.snippet.clone()).collect();
@@ -442,14 +445,20 @@ impl RagEngine for HybridRagEngine {
         meta: Option<RagMeta>,
     ) -> Result<()> {
         // 将文档添加到所有可用的引擎
-        self.vector_engine.add_document_text_with_meta(document_id, text, page, meta.clone()).await?;
+        self.vector_engine
+            .add_document_text_with_meta(document_id, text, page, meta.clone())
+            .await?;
 
         if let Some(ref lexical_engine) = self.lexical_engine {
-            lexical_engine.add_document_text_with_meta(document_id, text, page, meta.clone()).await?;
+            lexical_engine
+                .add_document_text_with_meta(document_id, text, page, meta.clone())
+                .await?;
         }
 
         if let Some(ref graph_engine) = self.graph_engine {
-            graph_engine.add_document_text_with_meta(document_id, text, page, meta).await?;
+            graph_engine
+                .add_document_text_with_meta(document_id, text, page, meta)
+                .await?;
         }
 
         Ok(())
@@ -531,12 +540,15 @@ impl RagEngine for HybridRagEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::{NoopRagEngine};
+    use crate::engine::NoopRagEngine;
 
     #[tokio::test]
     async fn test_hybrid_config_default() {
         let config = HybridConfig::default();
-        assert_eq!(config.vector_weight + config.lexical_weight + config.graph_weight, 1.0);
+        assert_eq!(
+            config.vector_weight + config.lexical_weight + config.graph_weight,
+            1.0
+        );
         assert!(config.final_top_k > 0);
     }
 

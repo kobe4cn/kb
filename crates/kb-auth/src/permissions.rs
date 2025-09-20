@@ -237,10 +237,7 @@ impl PermissionGroup {
             PermissionGroup {
                 name: "查询服务",
                 description: "知识库查询和相关功能",
-                permissions: vec![
-                    Permission::QUERY_EXECUTE,
-                    Permission::QUERY_ADMIN,
-                ],
+                permissions: vec![Permission::QUERY_EXECUTE, Permission::QUERY_ADMIN],
             },
         ]
     }

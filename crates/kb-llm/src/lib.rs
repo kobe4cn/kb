@@ -101,9 +101,9 @@ impl ChatModel for OpenAiCompatClient {
             .await
             .map_err(|e| KbError::Network {
                 operation: "http_request".to_string(),
-                message: e.to_string()
+                message: e.to_string(),
             })?;
-        
+
         if !resp.status().is_success() {
             let status = resp.status();
             let txt = resp.text().await.unwrap_or_default();
@@ -114,13 +114,10 @@ impl ChatModel for OpenAiCompatClient {
             });
         }
 
-        let data: OaiChatResp = resp
-            .json()
-            .await
-            .map_err(|e| KbError::Network {
-                operation: "http_request".to_string(),
-                message: e.to_string()
-            })?;
+        let data: OaiChatResp = resp.json().await.map_err(|e| KbError::Network {
+            operation: "http_request".to_string(),
+            message: e.to_string(),
+        })?;
         let content = data
             .choices
             .get(0)
@@ -173,7 +170,7 @@ impl EmbedModel for OpenAiCompatClient {
             .await
             .map_err(|e| KbError::Network {
                 operation: "http_request".to_string(),
-                message: e.to_string()
+                message: e.to_string(),
             })?;
 
         if !resp.status().is_success() {
@@ -186,13 +183,10 @@ impl EmbedModel for OpenAiCompatClient {
             });
         }
 
-        let data: OaiEmbedResp = resp
-            .json()
-            .await
-            .map_err(|e| KbError::Network {
-                operation: "http_request".to_string(),
-                message: e.to_string()
-            })?;
+        let data: OaiEmbedResp = resp.json().await.map_err(|e| KbError::Network {
+            operation: "http_request".to_string(),
+            message: e.to_string(),
+        })?;
         Ok(data.data.into_iter().map(|d| d.embedding).collect())
     }
 }
@@ -281,7 +275,7 @@ impl ChatModel for AnthropicClient {
             .await
             .map_err(|e| KbError::Network {
                 operation: "http_request".to_string(),
-                message: e.to_string()
+                message: e.to_string(),
             })?;
 
         if !resp.status().is_success() {
@@ -294,13 +288,10 @@ impl ChatModel for AnthropicClient {
             });
         }
 
-        let data: AnthMessageResp = resp
-            .json()
-            .await
-            .map_err(|e| KbError::Network {
-                operation: "http_request".to_string(),
-                message: e.to_string()
-            })?;
+        let data: AnthMessageResp = resp.json().await.map_err(|e| KbError::Network {
+            operation: "http_request".to_string(),
+            message: e.to_string(),
+        })?;
         let mut out = String::new();
         for c in data.content.into_iter() {
             if let Some(t) = c.text {
@@ -316,7 +307,8 @@ impl EmbedModel for AnthropicClient {
     async fn embed(&self, _texts: &[String]) -> Result<Vec<Vec<f32>>> {
         Err(KbError::Configuration {
             key: "embedding_provider".to_string(),
-            reason: "Anthropic does not provide embeddings; configure another embedding provider".to_string(),
+            reason: "Anthropic does not provide embeddings; configure another embedding provider"
+                .to_string(),
         })
     }
 }
@@ -379,7 +371,7 @@ impl EmbedModel for QwenDashScopeClient {
             .await
             .map_err(|e| KbError::Network {
                 operation: "http_request".to_string(),
-                message: e.to_string()
+                message: e.to_string(),
             })?;
         if !resp.status().is_success() {
             let status = resp.status();
@@ -390,13 +382,10 @@ impl EmbedModel for QwenDashScopeClient {
                 retry_after: None,
             });
         }
-        let data: DashScopeEmbedResp = resp
-            .json()
-            .await
-            .map_err(|e| KbError::Network {
-                operation: "http_request".to_string(),
-                message: e.to_string()
-            })?;
+        let data: DashScopeEmbedResp = resp.json().await.map_err(|e| KbError::Network {
+            operation: "http_request".to_string(),
+            message: e.to_string(),
+        })?;
         Ok(data.data.into_iter().map(|d| d.embedding).collect())
     }
 }
